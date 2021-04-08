@@ -10,7 +10,9 @@
 #include <string.h>
 #include "../util/so_stdio.h"
 
-#define BUFSIZE 4096
+#define BUFSIZE 4096 
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+/* https://stackoverflow.com/questions/3437404/min-and-max-in-c */
 
 typedef struct _so_file {
 	char buffer[4096];
