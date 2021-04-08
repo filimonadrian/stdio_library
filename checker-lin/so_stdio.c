@@ -1,5 +1,50 @@
 #include "so_stdio.h"
 
+/* returns number of readed bytes */
+int read_buffer(SO_FILE *stream)
+{
+	int no_bytes = 0;
+
+	if (stream == NULL)
+		return -1;
+
+	memset(stream->buffer, 0, BUFSIZE);
+	no_bytes = read(stream->fd, stream->buffer, BUFSIZE);
+	stream->nth_ch = 0;
+
+	if (no_bytes < 0)
+		return SO_EOF;
+
+	stream->buflen = no_bytes;
+
+	return no_bytes;
+}
+
+void reset_buf(SO_FILE *stream)
+{
+	memset(stream->buffer, 0, BUFSIZE);
+	stream->buflen = 0;
+	stream->nth_ch = 0;
+}
+
+int write_buffer(SO_FILE *stream)
+{
+	if (stream == NULL)
+		return SO_EOF;
+
+	int total_bytes = 0;
+	int no_bytes = 0;
+	
+	while (total_bytes != stream->buflen) {
+		no_bytes = write(stream->fd, stream->buffer, stream->buflen);
+		total_bytes += no_bytes;
+	}
+
+	reset_buf(stream);
+	return no_bytes;
+}
+
+
 SO_FILE *so_fopen(const char *pathname, const char *mode)
 {
 	SO_FILE *stream = malloc(sizeof(SO_FILE));
@@ -41,9 +86,16 @@ int so_fclose(SO_FILE *stream)
 {
 	int ret = 0;
 	int fd = 0;
+	int no_bytes = 0;
 
 	if (stream == NULL)
 		return SO_EOF;
+
+	if (stream->last_op == WRITE) {
+		no_bytes = write_buffer(stream);
+		if (no_bytes < 0)
+			return SO_EOF;
+	}
 
 	fd = stream->fd;
 	free(stream);
@@ -58,33 +110,13 @@ int so_fclose(SO_FILE *stream)
 	return 0;
 }
 
-/* returns number of readed bytes */
-int read_buffer(SO_FILE *stream)
-{
-	ssize_t no_bytes = 0;
-
-	if (stream == NULL)
-		return -1;
-
-	memset(stream->buffer, 0, BUFSIZE);
-	no_bytes = read(stream->fd, stream->buffer, BUFSIZE);
-	stream->nth_ch = 0;
-
-	if (no_bytes < 0)
-		return SO_EOF;
-
-	stream->buflen = no_bytes;
-
-	return no_bytes;
-}
-
 int so_fgetc(SO_FILE *stream)
 {
 	if (stream == NULL)
 		return -1;
 
 	unsigned int ch = 0;
-	ssize_t no_bytes = 0;
+	int no_bytes = 0;
 
 	if (stream->nth_ch < stream->buflen) {
 		ch = stream->buffer[stream->nth_ch];
@@ -98,13 +130,31 @@ int so_fgetc(SO_FILE *stream)
 
 	ch = stream->buffer[stream->nth_ch];
 	stream->nth_ch++;
+	stream->last_op = READ;
 
 	return ch;
 }
 
 int so_fputc(int c, SO_FILE *stream)
 {
-	return 0;
+	if (stream == NULL)
+		return SO_EOF;
+
+	int no_bytes = 0;
+
+	if (stream->buflen == BUFSIZE - 1) {
+		// write(stream->fd, stream->buffer, stream->buflen);
+		no_bytes = write_buffer(stream);
+		if (no_bytes < 0)
+			return SO_EOF;
+	}
+
+	stream->buffer[stream->buflen] = c;
+	stream->buflen++;
+	stream->last_op = WRITE;
+
+	return c;
+
 }
 
 size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
@@ -112,7 +162,7 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 	if (stream == NULL)
 		return SO_EOF;
 
-	size_t no_bytes = 0;
+	int no_bytes = 0;
 	size_t scraps_buffer = 0;
 	size_t read_size = 0;
 	size_t total_bytes = 0;
@@ -178,6 +228,11 @@ long so_ftell(SO_FILE *stream)
 
 int so_fflush(SO_FILE *stream)
 {
+	int no_bytes = 0;
+
+	no_bytes = write_buffer(stream);
+	if (no_bytes < 0)
+		return SO_EOF;
 	return 0;
 }
 
