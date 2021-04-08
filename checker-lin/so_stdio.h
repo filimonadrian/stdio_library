@@ -14,6 +14,8 @@
 
 typedef struct _so_file {
 	char buffer[4096];
+	size_t buflen;
 	int fd;
+	int nth_ch;
 
 } SO_FILE;

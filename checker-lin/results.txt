@@ -1,4 +1,8 @@
 
 00) Sources check...........................................passed  [05/95]
 01) Test fopen arguments....................................passed  [02/95]
-02) Test fgetc..............................................failed  [ 0/95]
+02) Test fgetc..............................................passed  [02/95]
+03) Test fgetc large file...................................passed  [02/95]
+04) Test fread small file...................................failed  [ 0/95]
+05) Test fread large file...................................failed  [ 0/95]
+06) Test chunked fread large file...........................failed  [ 0/95]

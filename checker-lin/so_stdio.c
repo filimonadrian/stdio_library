@@ -61,7 +61,31 @@ int so_fclose(SO_FILE *stream)
 
 int so_fgetc(SO_FILE *stream)
 {
-	return 0;
+	if (stream == NULL)
+		return -1;
+
+	ssize_t no_bytes = 0;
+	unsigned int ch = 0;
+
+	if (stream->nth_ch < stream->buflen) {
+		ch = stream->buffer[stream->nth_ch];
+		stream->nth_ch++;
+		return ch;
+	}
+
+	memset(stream->buffer, 0, BUFSIZE);
+	no_bytes = read(stream->fd, stream->buffer, BUFSIZE);
+	stream->nth_ch = 0;
+
+	if (no_bytes < 0)
+		return SO_EOF;
+
+	stream->buflen = no_bytes;
+
+	ch = stream->buffer[stream->nth_ch];
+	stream->nth_ch++;
+
+	return ch;
 }
 
 int so_fputc(int c, SO_FILE *stream)
