@@ -20,6 +20,9 @@ typedef struct _so_file {
 	char buffer[4096];
 	size_t buflen;
 	int fd;
+	int mode;
+	int update;
 	int nth_ch;
 	int last_op;
+	long file_offset;
 } SO_FILE;

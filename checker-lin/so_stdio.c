@@ -9,9 +9,9 @@ int read_buffer(SO_FILE *stream)
 		return -1;
 
 	memset(stream->buffer, 0, BUFSIZE);
-	no_bytes = read(stream->fd, stream->buffer, BUFSIZE);
 	stream->nth_ch = 0;
 
+	no_bytes = read(stream->fd, stream->buffer, BUFSIZE);
 	if (no_bytes < 0)
 		return SO_EOF;
 
@@ -53,13 +53,19 @@ SO_FILE *so_fopen(const char *pathname, const char *mode)
 
 	memset(stream, 0, sizeof(SO_FILE));
 
-	if (!strcmp(mode, "r+"))
+	if (!strcmp(mode, "r+")) {
+		stream->mode = O_RDWR;
+		stream->update = 1;
 		fd = open(pathname, O_RDWR);
-	else if (!strcmp(mode, "w+"))
+	} else if (!strcmp(mode, "w+")) {
+		stream->mode = O_RDWR;
+		stream->update = 1;
 		fd = open(pathname, O_RDWR | O_CREAT | O_TRUNC);
-	else if (!strcmp(mode, "a+"))
+	} else if (!strcmp(mode, "a+")) {
+		stream->mode = O_APPEND;
+		stream->update = 1;
 		fd = open(pathname, O_APPEND | O_RDONLY | O_CREAT);
-	else if (!strcmp(mode, "r"))
+	} else if (!strcmp(mode, "r"))
 		fd = open(pathname, O_RDONLY);
 	else if (!strcmp(mode, "w"))
 		fd = open(pathname, O_WRONLY | O_CREAT | O_TRUNC);
@@ -111,24 +117,21 @@ int so_fclose(SO_FILE *stream)
 int so_fgetc(SO_FILE *stream)
 {
 	if (stream == NULL)
-		return -1;
+		return SO_EOF;
 
 	unsigned int ch = 0;
 	int no_bytes = 0;
 
-	if (stream->nth_ch < stream->buflen) {
-		ch = stream->buffer[stream->nth_ch];
-		stream->nth_ch++;
-		return ch;
-	}
+	stream->last_op = READ;
 
-	no_bytes = read_buffer(stream);
-	if (no_bytes < 0)
-		return SO_EOF;
+	if (stream->nth_ch >= stream->buflen) {
+		no_bytes = read_buffer(stream);
+		if (no_bytes < 0)
+			return SO_EOF;	
+	}
 
 	ch = stream->buffer[stream->nth_ch];
 	stream->nth_ch++;
-	stream->last_op = READ;
 
 	return ch;
 }
@@ -165,10 +168,18 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 	size_t read_size = 0;
 	size_t total_bytes = 0;
 	size_t copy_size = 0;
+	int ret = 0;
 
 	read_size = size * nmemb;
 	scraps_buffer = 0;
 
+	if (stream->last_op == WRITE) {
+		ret = so_fflush(stream);
+		if (ret != 0)
+			return SO_EOF;
+	}
+
+	stream->last_op = READ;
 	/* if all data from buffer is consumed --> read new data */
 	if (stream->nth_ch >= stream->buflen) {
 		no_bytes = read_buffer(stream);
@@ -182,6 +193,7 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 		/* copy into specified zone read_size bytes from buffer */
 		memcpy(ptr, stream->buffer + stream->nth_ch, read_size);
 		stream->nth_ch += read_size;
+		stream->file_offset += read_size;
 		return read_size / size;
 	}
 
@@ -206,6 +218,7 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 	}
 
 	/* return number of elements of this size */
+	stream->file_offset += total_bytes;
 	return total_bytes / size;
 }
 
@@ -225,6 +238,7 @@ size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 
 	/* mark the operation as write */
 	stream->last_op = WRITE;
+	stream->file_offset = lseek(stream->fd, 0, SEEK_CUR);
 
 	/* if the buffer is full, write the data */
 	if (stream->buflen >= BUFSIZE) {
@@ -244,6 +258,7 @@ size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 				return 0;
 			total_bytes += no_bytes;
 		}
+		stream->file_offset += write_size;
 		return write_size / size;
 	}
 
@@ -259,7 +274,7 @@ size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 		if (total_bytes >= write_size)
 			break;
 
-		// write more data in stream buffer 
+		// write more data in stream buffer
 		if (stream->buflen >= BUFSIZE) {
 			no_bytes = write_buffer(stream);
 			if (no_bytes < 0)
@@ -269,17 +284,28 @@ size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 		free_space_buffer = BUFSIZE - stream->buflen;
 	}
 
+	stream->file_offset += total_bytes;
 	return total_bytes / size;
 }
 
 int so_fseek(SO_FILE *stream, long offset, int whence)
 {
+	if (stream->last_op == READ) {
+		memset(stream->buffer, 0, BUFSIZE);
+		stream->buflen = 0;
+		stream->nth_ch = 0;
+	} else if (stream->last_op == WRITE)
+		so_fflush(stream);
+
 	return 0;
 }
 
 long so_ftell(SO_FILE *stream)
 {
-	return 0;
+	if (stream == NULL)
+		return SO_EOF;
+
+	return stream->file_offset;
 }
 
 int so_fflush(SO_FILE *stream)
@@ -297,11 +323,17 @@ int so_fileno(SO_FILE *stream)
 	if (stream != NULL)
 		return stream->fd;
 
-	return -1;
+	return SO_EOF;
 }
 
 int so_feof(SO_FILE *stream)
 {
+	int end_file = 0;
+
+	end_file = lseek(stream->fd, 0, SEEK_END);
+
+	if (stream->file_offset == end_file)
+		return 1;
 	return 0;
 }
 
