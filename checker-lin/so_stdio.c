@@ -32,13 +32,11 @@ int write_buffer(SO_FILE *stream)
 	if (stream == NULL)
 		return SO_EOF;
 
-	int total_bytes = 0;
 	int no_bytes = 0;
-	
-	while (total_bytes != stream->buflen) {
-		no_bytes = write(stream->fd, stream->buffer, stream->buflen);
-		total_bytes += no_bytes;
-	}
+
+	no_bytes = write(stream->fd, stream->buffer, stream->buflen);
+	if (no_bytes < 0)
+		return SO_EOF;
 
 	reset_buf(stream);
 	return no_bytes;
@@ -213,7 +211,65 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 
 size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 {
-	return 0;
+	if (stream == NULL || ptr == NULL)
+		return 0;
+
+	int no_bytes = 0;
+	size_t write_size = 0;
+	size_t total_bytes = 0;
+	size_t copy_size = 0;
+	size_t free_space_buffer = 0;
+
+	write_size = size * nmemb;
+	free_space_buffer = BUFSIZE - stream->buflen;
+
+	/* mark the operation as write */
+	stream->last_op = WRITE;
+
+	/* if the buffer is full, write the data */
+	if (stream->buflen >= BUFSIZE) {
+		no_bytes = write_buffer(stream);
+		if (no_bytes < 0)
+			return 0;
+		total_bytes += no_bytes;
+	}
+
+	if (free_space_buffer >= write_size) {
+		memcpy(stream->buffer + stream->buflen, ptr, write_size);
+		stream->buflen += write_size;
+		if (stream->buflen == BUFSIZE) {
+			no_bytes = write_buffer(stream);
+			// no_bytes = write(stream->fd, stream->buffer, stream->buflen);
+			if (no_bytes < 0)
+				return 0;
+			total_bytes += no_bytes;
+		}
+		return write_size / size;
+	}
+
+	while (total_bytes < write_size) {
+		copy_size = MIN(free_space_buffer, write_size - total_bytes);
+		memcpy(stream->buffer + stream->buflen,
+			ptr + total_bytes,
+			copy_size);
+
+		total_bytes += copy_size;
+		stream->buflen += copy_size;
+
+		if (total_bytes >= write_size)
+			break;
+
+		// write more data in stream buffer 
+		if (stream->buflen >= BUFSIZE) {
+			no_bytes = write_buffer(stream);
+			if (no_bytes < 0)
+				return 0;
+		}
+
+		free_space_buffer = BUFSIZE - stream->buflen;
+	}
+
+	return total_bytes / size;
 }
 
 int so_fseek(SO_FILE *stream, long offset, int whence)
