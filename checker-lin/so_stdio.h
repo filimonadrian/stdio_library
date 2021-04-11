@@ -14,6 +14,8 @@
 #define WRITE 2
 #define READ 1
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+#define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
+
 /* https://stackoverflow.com/questions/3437404/min-and-max-in-c */
 
 typedef struct _so_file {
@@ -25,4 +27,5 @@ typedef struct _so_file {
 	int nth_ch;
 	int last_op;
 	long file_offset;
+	long read_offset;
 } SO_FILE;
