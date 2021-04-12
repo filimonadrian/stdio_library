@@ -411,68 +411,6 @@ int so_ferror(SO_FILE *stream)
 
 SO_FILE *so_popen(const char *command, const char *type)
 {
-	int ret = 0;
-	int fds[2];
-	SO_FILE *stream = malloc(sizeof(SO_FILE));
-	char *args[4];
-
-	for (int i = 0; i < 4; i++)
-		args[i] = malloc(10 * sizeof(char));
-
-	strcpy(args[0], "sh");
-	strcpy(args[1], "-c");
-	strcpy(args[2], command);
-	strcpy(args[3], "\0");
-
-	if (stream == NULL)
-		exit(ENOMEM);
-
-	memset(stream, 0, sizeof(SO_FILE));
-	ret = pipe(fds);
-	if (ret != 0)
-		return NULL;
-
-	pid_t pid, wait_ret;
-	int status = 0;
-
-	pid = fork();
-	switch (pid) {
-	case -1:
-		/* Fork failed, cleaning up... */
-		return NULL;
-	case 0:
-		/* Child process */
-
-		close(fds[PIPE_WRITE]);
-		stream->fd = fds[PIPE_READ];
-
-		// execvp("so_stdio.c", args);
-		ret = read_buffer(stream);
-		if (ret <= 0)
-			close(stream->fd);
-
-		break;
-	default:
-		/* Parent process */
-
-		close(fds[PIPE_READ]);
-		stream->fd = fds[PIPE_WRITE];
-
-		// ret = write_buffer()
-		/* Wait for child process to finish */
-		wait_ret = waitpid(pid, &status, 0);
-		if (wait_ret < 0) {
-			stream->err = 1;
-			return NULL;
-		}
-
-		close(fds[PIPE_READ]);
-
-		break;
-	}
-
-	for (int i = 0; i < 4; i++)
-		free(args[i]);
 	return NULL;
 }
 
