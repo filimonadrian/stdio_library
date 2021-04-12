@@ -8,14 +8,16 @@
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/wait.h>
 #include "../util/so_stdio.h"
 
-#define BUFSIZE 4096
-#define WRITE 2
-#define READ 1
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 #define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
-
+#define BUFSIZE		4096
+#define WRITE		2
+#define READ		1
+#define PIPE_READ	0
+#define PIPE_WRITE	1
 /* https://stackoverflow.com/questions/3437404/min-and-max-in-c */
 
 typedef struct _so_file {
@@ -26,8 +28,8 @@ typedef struct _so_file {
 	int update;
 	int nth_ch;
 	int last_op;
-	long file_offset;
-	long read_offset;
 	int is_EOF;
 	int err;
+	long file_offset;
+	long read_offset;
 } SO_FILE;
