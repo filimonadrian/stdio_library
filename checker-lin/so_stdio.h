@@ -28,4 +28,6 @@ typedef struct _so_file {
 	int last_op;
 	long file_offset;
 	long read_offset;
+	int is_EOF;
+	int err;
 } SO_FILE;

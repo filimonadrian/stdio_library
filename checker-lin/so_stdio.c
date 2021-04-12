@@ -12,8 +12,15 @@ int read_buffer(SO_FILE *stream)
 	stream->nth_ch = 0;
 
 	no_bytes = read(stream->fd, stream->buffer, BUFSIZE);
-	if (no_bytes < 0)
+	if (no_bytes < 0) {
+		stream->err = 1;
 		return SO_EOF;
+	}
+
+	if (no_bytes == 0) {
+		stream->is_EOF = 1;
+		return 0;
+	}
 
 	stream->buflen = no_bytes;
 
@@ -35,8 +42,10 @@ int write_buffer(SO_FILE *stream)
 	int no_bytes = 0;
 
 	no_bytes = write(stream->fd, stream->buffer, stream->buflen);
-	if (no_bytes < 0)
+	if (no_bytes < 0) {
+		stream->err = 1;
 		return SO_EOF;
+	}
 
 	reset_buf(stream);
 	return no_bytes;
@@ -98,8 +107,11 @@ int so_fclose(SO_FILE *stream)
 	// fprintf(stderr, "LAST_OP = %d\n", stream->last_op);
 	if (stream->last_op == WRITE) {
 		no_bytes = write_buffer(stream);
-		if (no_bytes < 0)
+		if (no_bytes < 0) {
+			stream->err = 1;
+			free(stream);
 			return SO_EOF;
+		}
 	}
 
 	fd = stream->fd;
@@ -124,13 +136,14 @@ int so_fgetc(SO_FILE *stream)
 
 	if (stream->nth_ch >= stream->buflen) {
 		no_bytes = read_buffer(stream);
-		if (no_bytes < 0)
-			return SO_EOF;	
+		if (no_bytes <= 0) {
+			stream->err = 1;
+			return SO_EOF;
+		}
 	}
 
 	ch = stream->buffer[stream->nth_ch];
 	stream->nth_ch++;
-	// stream->read_offset++;
 
 	return ch;
 }
@@ -146,8 +159,10 @@ int so_fputc(int c, SO_FILE *stream)
 
 	if (stream->buflen == BUFSIZE - 1) {
 		no_bytes = write_buffer(stream);
-		if (no_bytes < 0)
+		if (no_bytes < 0) {
+			stream->err = 1;
 			return SO_EOF;
+		}
 	}
 
 	stream->buffer[stream->buflen] = c;
@@ -175,7 +190,7 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 	if (stream->last_op == WRITE && stream->buflen > 0) {
 		ret = so_fflush(stream);
 		if (ret != 0)
-			return SO_EOF;
+			return 0;
 		lseek(stream->fd, stream->read_offset, SEEK_SET);
 	}
 
@@ -183,8 +198,12 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 	/* if all data from buffer is consumed --> read new data */
 	if (stream->nth_ch >= stream->buflen) {
 		no_bytes = read_buffer(stream);
-		if (no_bytes < 0)
-			return SO_EOF;
+		if (no_bytes < 0) {
+			stream->err = 1;
+			return 0;
+		}
+		if (no_bytes == 0)
+			return 0;
 	}
 
 	scraps_buffer = stream->buflen - stream->nth_ch;
@@ -211,8 +230,13 @@ size_t so_fread(void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 			break;
 		/* read more data in stream buffer */
 		no_bytes = read_buffer(stream);
-		if (no_bytes < 0)
-			return SO_EOF;
+		if (no_bytes < 0) {
+			stream->err = 1;
+			return 0;
+		}
+		if (no_bytes == 0) {
+			break;
+		}
 
 		scraps_buffer = stream->buflen - stream->nth_ch;
 	}
@@ -243,8 +267,11 @@ size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 	/* if the buffer is full, write the data */
 	if (stream->buflen >= BUFSIZE) {
 		no_bytes = write_buffer(stream);
-		if (no_bytes < 0)
+		if (no_bytes < 0) {
+			stream->err = 1;
 			return 0;
+		}
+
 		total_bytes += no_bytes;
 	}
 
@@ -253,8 +280,10 @@ size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 		stream->buflen += write_size;
 		if (stream->buflen == BUFSIZE) {
 			no_bytes = write_buffer(stream);
-			if (no_bytes < 0)
+			if (no_bytes < 0) {
+				stream->err = 1;
 				return 0;
+			}
 			total_bytes += no_bytes;
 		}
 		stream->file_offset += write_size;
@@ -276,8 +305,10 @@ size_t so_fwrite(const void *ptr, size_t size, size_t nmemb, SO_FILE *stream)
 		// write more data in stream buffer
 		if (stream->buflen >= BUFSIZE) {
 			no_bytes = write_buffer(stream);
-			if (no_bytes < 0)
+			if (no_bytes < 0) {
+				stream->err = 1;
 				return 0;
+			}
 		}
 
 		free_space_buffer = BUFSIZE - stream->buflen;
@@ -341,8 +372,10 @@ int so_fflush(SO_FILE *stream)
 
 	if (stream->last_op == WRITE) {
 		no_bytes = write_buffer(stream);
-		if (no_bytes < 0)
+		if (no_bytes < 0) {
+			stream->err = 1;
 			return SO_EOF;
+		}
 	}
 
 	return 0;
@@ -358,22 +391,21 @@ int so_fileno(SO_FILE *stream)
 
 int so_feof(SO_FILE *stream)
 {
-	int end_file = 0;
-
-	end_file = lseek(stream->fd, 0, SEEK_END);
-
-	if (stream->file_offset == end_file)
-		return 1;
-	return 0;
+	return stream->is_EOF;
 }
 
 int so_ferror(SO_FILE *stream)
 {
-	return 0;
+	return stream->err;
 }
 
 SO_FILE *so_popen(const char *command, const char *type)
 {
+	SO_FILE *stream = malloc(sizeof(SO_FILE));
+	if (stream == NULL)
+		exit(ENOMEM);
+
+	memset(stream, 0, sizeof(SO_FILE));
 	return NULL;
 }
 
